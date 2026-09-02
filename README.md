@@ -65,3 +65,15 @@ default (Astro) or bare HTML/CSS — with the Pages base path, lockfile, and CI
 link check handled.
 
 See the course site for how the checks map to each week of the course.
+
+
+## Credits
+
+`public/flight-of-the-bumblebee.mp3` --- *Flight of the Bumblebee*
+(Rimsky-Korsakov, 1899--1900), performed by **The US Army Band**. Creative
+Commons Public Domain Mark 1.0, via
+[archive.org](https://archive.org/details/FlightOfTheBumblebee).
+
+Both halves of the copyright have to be clear to ship a recording. The
+composition is out of copyright on its own age; the performance is free
+because a work of the US federal government carries no copyright at all.

@@ -38,80 +38,44 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matc
 
 
 // --- Flight of the Bumblebee -------------------------------------------
-// Rimsky-Korsakov, 1900, and long out of copyright --- but a *recording* of it
-// would not be, so the notes are encoded here and synthesised rather than
-// shipped as audio. It also means the tempo can ride the game's own speed,
-// which a file could not do.
-//
-// The famous opening is a chromatic run, which is the whole reason the piece
-// sounds like an insect: semitone steps with no gaps read as a buzz.
-const PHRASE: number[] = [
-  76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65,
-  64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-];
-const BASE_NOTE_S = 0.082;
+// public/flight-of-the-bumblebee.mp3 --- The US Army Band, Creative Commons
+// Public Domain Mark 1.0, via archive.org. Both halves of the copyright have
+// to be clear to ship a recording, not just one: Rimsky-Korsakov died in 1908
+// so the *composition* is long out of copyright, but a performance carries its
+// own separate rights on top of that. A US Army Band recording is a work of
+// the federal government, so it has none.
+const music = new Audio("./flight-of-the-bumblebee.mp3");
+music.loop = true;
+music.volume = 0.55;
 
-let audioCtx: AudioContext | null = null;
 let musicOn = true;
-let noteAt = 0;
-let noteIndex = 0;
-let noteLength = BASE_NOTE_S;
+let musicStarted = false;
 
-/** The bee flies faster as the rain thickens, and so does the tune. */
+/** The bee flies faster as the rain thickens, and the tune goes with it. */
 function setBuzzRate(speed: number): void {
-  noteLength = BASE_NOTE_S * (3 / Math.max(3, speed)) ** 0.35;
-}
-
-function noteHz(midi: number): number {
-  return 440 * 2 ** ((midi - 69) / 12);
-}
-
-function scheduleNote(midi: number, at: number): void {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  const filter = audioCtx.createBiquadFilter();
-  // Sawtooth through a lowpass is the cheapest thing that reads as "buzz"
-  // rather than "beep".
-  osc.type = "sawtooth";
-  osc.frequency.value = noteHz(midi);
-  filter.type = "lowpass";
-  filter.frequency.value = 1400;
-  gain.gain.setValueAtTime(0.0001, at);
-  gain.gain.exponentialRampToValueAtTime(0.09, at + 0.008);
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + noteLength * 0.95);
-  osc.connect(filter).connect(gain).connect(audioCtx.destination);
-  osc.start(at);
-  osc.stop(at + noteLength);
-}
-
-function pump(): void {
-  if (!audioCtx) return;
-  while (noteAt < audioCtx.currentTime + 0.25) {
-    scheduleNote(PHRASE[noteIndex % PHRASE.length] ?? 69, noteAt);
-    noteAt += noteLength;
-    noteIndex += 1;
-  }
-  window.setTimeout(pump, 60);
+  music.playbackRate = 1 + Math.min(0.18, (speed - 3) * 0.03);
 }
 
 /** Browsers refuse to start audio without a gesture, so this runs on the
  *  first real input rather than on load. */
 function startMusic(): void {
-  if (audioCtx || !musicOn) return;
-  audioCtx = new AudioContext();
-  noteAt = audioCtx.currentTime + 0.08;
-  pump();
+  if (musicStarted || !musicOn) return;
+  musicStarted = true;
+  // A rejected play() is not worth breaking input over --- the player just
+  // gets a silent game.
+  void music.play().catch(() => {
+    musicStarted = false;
+  });
 }
 
 function toggleMusic(): void {
   musicOn = !musicOn;
-  if (!audioCtx) {
-    if (musicOn) startMusic();
-    return;
+  if (musicOn) {
+    musicStarted = false;
+    startMusic();
+  } else {
+    music.pause();
   }
-  if (musicOn) void audioCtx.resume();
-  else void audioCtx.suspend();
 }
 
 function laneCenter(lane: Lane): number {
