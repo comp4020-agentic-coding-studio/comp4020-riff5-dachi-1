@@ -54,23 +54,35 @@ export function difficultyForScore(score: number): number {
 /** How much honey a bee can hold. Also the number of hits a run survives. */
 export const MAX_HONEY = 3;
 
-/** Flowers gathered before the hive gives a drop of honey back. */
-export const FLOWERS_PER_HONEY = 5;
+/** What can be sitting in an open lane. Flowers are the tally you are playing
+ *  for; honey is the health you spend staying alive long enough to gather
+ *  them. Keeping them separate means picking one up is never a wash. */
+export type PickupKind = "flower" | "honey";
 
-/** Points a flower is worth, against 1 for surviving a row of rain. */
-export const FLOWER_POINTS = 5;
+export interface Pickup {
+  readonly lane: Lane;
+  readonly kind: PickupKind;
+}
+
+/** How often an open lane has something in it at all, and how much of that is
+ *  honey rather than a flower. Honey is the rarer of the two because it is
+ *  the one that undoes a mistake. */
+const PICKUP_CHANCE = 0.45;
+const HONEY_SHARE = 0.24;
 
 /**
- * Where a flower blooms in a row of rain, if one does. Only ever in a lane the
- * rain leaves open --- a flower under a raindrop would be asking the player to
+ * What is sitting in a row of rain, if anything. Only ever in a lane the rain
+ * leaves open --- a pickup under a raindrop would be asking the player to
  * choose between the two things the game rewards, which is a different (and
  * meaner) game than this one.
  */
-export function generateFlower(random: () => number, row: Row): Lane | null {
+export function generatePickup(random: () => number, row: Row): Pickup | null {
   const open = ([0, 1, 2] as Lane[]).filter((lane) => !row.blocked.includes(lane));
   if (open.length === 0) return null;
-  if (random() > 0.45) return null;
-  return open[Math.floor(random() * open.length)] ?? null;
+  if (random() > PICKUP_CHANCE) return null;
+  const kind: PickupKind = random() < HONEY_SHARE ? "honey" : "flower";
+  const lane = open[Math.floor(random() * open.length)];
+  return lane === undefined ? null : { lane, kind };
 }
 
 /** A raindrop hit. Honey never goes below empty. */
@@ -86,4 +98,76 @@ export function honeyAfterRefill(honey: number): number {
 /** Out of honey is out of run. */
 export function isGrounded(honey: number): boolean {
   return honey <= 0;
+}
+
+// --- the second axis: levels, and vines that close across them -----------
+// Rain falls down the lanes, so you dodge it sideways. Vines grow in from the
+// sides across one level, so you dodge those by climbing or dropping. Neither
+// obstacle can be beaten on the other one's axis, which is the whole reason
+// for having both.
+
+export const LEVEL_COUNT = 4;
+export type Level = 0 | 1 | 2 | 3;
+
+/** At least this many levels stay clear of vines, so there is always
+ *  somewhere to go and it is never more than one move away. */
+export const MIN_CLEAR_LEVELS = 2;
+
+export interface Vine {
+  readonly level: Level;
+  readonly side: "left" | "right";
+  /** 0 at the edge, 1 fully across the playfield. */
+  reach: number;
+}
+
+export function clampLevel(level: number): Level {
+  return Math.max(0, Math.min(LEVEL_COUNT - 1, level)) as Level;
+}
+
+/**
+ * How far a vine has grown at a given point in its life: out, hold, back.
+ * Returned as a fraction of the full width, so the caller never deals in
+ * pixels and this stays testable.
+ */
+export function vineReach(age: number, grow: number, hold: number): number {
+  if (age <= 0) return 0;
+  if (age < grow) return age / grow;
+  if (age < grow + hold) return 1;
+  const retract = age - grow - hold;
+  return Math.max(0, 1 - retract / grow);
+}
+
+/**
+ * Which levels a new vine may use: never so many that the bee is left with
+ * fewer than MIN_CLEAR_LEVELS to fly to. The lane version of this rule
+ * ("never block every lane") is per-row and instantaneous; this one has to
+ * look at every vine currently on the board, because vines overlap in time.
+ */
+export function freeLevels(vines: readonly Vine[]): Level[] {
+  const taken = new Set(vines.map((vine) => vine.level));
+  return ([0, 1, 2, 3] as Level[]).filter((level) => !taken.has(level));
+}
+
+export function canSpawnVine(vines: readonly Vine[]): boolean {
+  return freeLevels(vines).length > MIN_CLEAR_LEVELS;
+}
+
+/** A vine on a level that is currently clear, or nothing if none is safe. */
+export function generateVine(random: () => number, vines: readonly Vine[]): Vine | null {
+  if (!canSpawnVine(vines)) return null;
+  const open = freeLevels(vines);
+  const level = open[Math.floor(random() * open.length)];
+  if (level === undefined) return null;
+  return { level, side: random() < 0.5 ? "left" : "right", reach: 0 };
+}
+
+/**
+ * Does this vine have the bee? `x` and the width are in the same units,
+ * whatever they are --- the rule is only about how far across the vine has
+ * grown from its own side.
+ */
+export function vineCatches(vine: Vine, level: Level, x: number, width: number): boolean {
+  if (vine.level !== level) return false;
+  const across = vine.reach * width;
+  return vine.side === "left" ? x <= across : x >= width - across;
 }

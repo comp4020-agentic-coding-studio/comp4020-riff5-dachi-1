@@ -6,7 +6,16 @@ import {
   generateRow,
   isCollision,
   speedForScore,
-  generateFlower,
+  generatePickup,
+  generateVine,
+  vineReach,
+  vineCatches,
+  canSpawnVine,
+  freeLevels,
+  clampLevel,
+  LEVEL_COUNT,
+  MIN_CLEAR_LEVELS,
+  type Vine,
   honeyAfterHit,
   honeyAfterRefill,
   isGrounded,
@@ -69,17 +78,85 @@ describe("difficulty and speed ramps", () => {
 
 // --- the riff's own rules ------------------------------------------------
 
-describe("flowers bloom where the rain isn't", () => {
-  it("never puts a flower under a raindrop", () => {
+describe("pickups sit where the rain isn't", () => {
+  it("never puts one under a raindrop", () => {
     for (let i = 0; i < 500; i++) {
       const row = generateRow(Math.random, (i % 10) / 9);
-      const flower = generateFlower(Math.random, row);
-      if (flower !== null) expect(row.blocked).not.toContain(flower);
+      const pickup = generatePickup(Math.random, row);
+      if (pickup !== null) expect(row.blocked).not.toContain(pickup.lane);
     }
   });
 
   it("returns nothing when every lane it could use is blocked", () => {
-    expect(generateFlower(() => 0, { blocked: [0, 1, 2] })).toBe(null);
+    expect(generatePickup(() => 0, { blocked: [0, 1, 2] })).toBe(null);
+  });
+
+  it("offers both flowers and honey over a run", () => {
+    const kinds = new Set<string>();
+    for (let i = 0; i < 400; i++) {
+      const pickup = generatePickup(Math.random, { blocked: [0] });
+      if (pickup) kinds.add(pickup.kind);
+    }
+    expect(kinds).toEqual(new Set(["flower", "honey"]));
+  });
+});
+
+describe("vines: the obstacle you dodge on the other axis", () => {
+  // The rain's fairness rule is per-row and instantaneous. Vines overlap in
+  // time, so theirs has to hold across every vine on the board at once ---
+  // the bee must always have somewhere to fly to.
+  it("never closes off so many levels that the bee is trapped", () => {
+    const live: Vine[] = [];
+    for (let i = 0; i < 200; i++) {
+      const born = generateVine(Math.random, live);
+      if (born) live.push(born);
+      expect(freeLevels(live).length).toBeGreaterThanOrEqual(MIN_CLEAR_LEVELS);
+    }
+    expect(live.length).toBe(LEVEL_COUNT - MIN_CLEAR_LEVELS);
+    expect(canSpawnVine(live)).toBe(false);
+    expect(generateVine(Math.random, live)).toBe(null);
+  });
+
+  it("never puts two vines on one level", () => {
+    const live: Vine[] = [];
+    for (let i = 0; i < 50; i++) {
+      const born = generateVine(Math.random, live);
+      if (born) live.push(born);
+    }
+    expect(new Set(live.map((v) => v.level)).size).toBe(live.length);
+  });
+
+  it("grows out, holds, and retracts", () => {
+    expect(vineReach(0, 1, 1)).toBe(0);
+    expect(vineReach(0.5, 1, 1)).toBeCloseTo(0.5);
+    expect(vineReach(1.5, 1, 1)).toBe(1);
+    expect(vineReach(2.5, 1, 1)).toBeCloseTo(0.5);
+    expect(vineReach(3, 1, 1)).toBe(0);
+  });
+
+  it("only catches a bee on its own level, on its own side", () => {
+    const left: Vine = { level: 1, side: "left", reach: 0.5 };
+    expect(vineCatches(left, 1, 20, 300)).toBe(true);
+    expect(vineCatches(left, 1, 280, 300)).toBe(false);
+    expect(vineCatches(left, 2, 20, 300)).toBe(false);
+
+    const right: Vine = { level: 1, side: "right", reach: 0.5 };
+    expect(vineCatches(right, 1, 280, 300)).toBe(true);
+    expect(vineCatches(right, 1, 20, 300)).toBe(false);
+  });
+
+  it("catches nothing before it has grown", () => {
+    const seed: Vine = { level: 0, side: "left", reach: 0 };
+    expect(vineCatches(seed, 0, 0, 300)).toBe(true);
+    expect(vineCatches(seed, 0, 1, 300)).toBe(false);
+  });
+});
+
+describe("clampLevel", () => {
+  it("keeps the bee inside the levels that exist", () => {
+    expect(clampLevel(-1)).toBe(0);
+    expect(clampLevel(LEVEL_COUNT)).toBe(LEVEL_COUNT - 1);
+    expect(clampLevel(2)).toBe(2);
   });
 });
 
