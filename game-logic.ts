@@ -44,3 +44,46 @@ export function speedForScore(score: number): number {
 export function difficultyForScore(score: number): number {
   return Math.min(1, score / 40);
 }
+
+// --- the riff: rain, flowers, honey -------------------------------------
+// Same three lanes and the same collision rule; what changes is that a hit
+// costs you something you can win back, so a run has a shape instead of just
+// a length. Kept in this file with the rest of the rules, per the note in
+// CLAUDE.md about why game-logic.ts has no DOM in it.
+
+/** How much honey a bee can hold. Also the number of hits a run survives. */
+export const MAX_HONEY = 3;
+
+/** Flowers gathered before the hive gives a drop of honey back. */
+export const FLOWERS_PER_HONEY = 5;
+
+/** Points a flower is worth, against 1 for surviving a row of rain. */
+export const FLOWER_POINTS = 5;
+
+/**
+ * Where a flower blooms in a row of rain, if one does. Only ever in a lane the
+ * rain leaves open --- a flower under a raindrop would be asking the player to
+ * choose between the two things the game rewards, which is a different (and
+ * meaner) game than this one.
+ */
+export function generateFlower(random: () => number, row: Row): Lane | null {
+  const open = ([0, 1, 2] as Lane[]).filter((lane) => !row.blocked.includes(lane));
+  if (open.length === 0) return null;
+  if (random() > 0.45) return null;
+  return open[Math.floor(random() * open.length)] ?? null;
+}
+
+/** A raindrop hit. Honey never goes below empty. */
+export function honeyAfterHit(honey: number): number {
+  return Math.max(0, honey - 1);
+}
+
+/** The hive tops you up, but never past what a bee can carry. */
+export function honeyAfterRefill(honey: number): number {
+  return Math.min(MAX_HONEY, honey + 1);
+}
+
+/** Out of honey is out of run. */
+export function isGrounded(honey: number): boolean {
+  return honey <= 0;
+}

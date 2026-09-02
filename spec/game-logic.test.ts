@@ -6,6 +6,11 @@ import {
   generateRow,
   isCollision,
   speedForScore,
+  generateFlower,
+  honeyAfterHit,
+  honeyAfterRefill,
+  isGrounded,
+  MAX_HONEY,
   type Lane,
 } from "../game-logic.ts";
 
@@ -59,5 +64,38 @@ describe("difficulty and speed ramps", () => {
   it("increases with score", () => {
     expect(speedForScore(20)).toBeGreaterThan(speedForScore(0));
     expect(difficultyForScore(20)).toBeGreaterThan(difficultyForScore(0));
+  });
+});
+
+// --- the riff's own rules ------------------------------------------------
+
+describe("flowers bloom where the rain isn't", () => {
+  it("never puts a flower under a raindrop", () => {
+    for (let i = 0; i < 500; i++) {
+      const row = generateRow(Math.random, (i % 10) / 9);
+      const flower = generateFlower(Math.random, row);
+      if (flower !== null) expect(row.blocked).not.toContain(flower);
+    }
+  });
+
+  it("returns nothing when every lane it could use is blocked", () => {
+    expect(generateFlower(() => 0, { blocked: [0, 1, 2] })).toBe(null);
+  });
+});
+
+describe("honey is the run's length, not the score", () => {
+  it("costs one drop a hit and never goes below empty", () => {
+    expect(honeyAfterHit(MAX_HONEY)).toBe(MAX_HONEY - 1);
+    expect(honeyAfterHit(0)).toBe(0);
+  });
+
+  it("refills, but never past what a bee can carry", () => {
+    expect(honeyAfterRefill(1)).toBe(2);
+    expect(honeyAfterRefill(MAX_HONEY)).toBe(MAX_HONEY);
+  });
+
+  it("grounds the bee only when the last drop goes", () => {
+    expect(isGrounded(1)).toBe(false);
+    expect(isGrounded(0)).toBe(true);
   });
 });
