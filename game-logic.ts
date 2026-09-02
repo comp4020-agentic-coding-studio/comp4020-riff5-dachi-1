@@ -57,7 +57,7 @@ export const MAX_HONEY = 3;
 /** What can be sitting in an open lane. Flowers are the tally you are playing
  *  for; honey is the health you spend staying alive long enough to gather
  *  them. Keeping them separate means picking one up is never a wash. */
-export type PickupKind = "flower" | "honey";
+export type PickupKind = "flower" | "honey" | "shield" | "slow";
 
 export interface Pickup {
   readonly lane: Lane;
@@ -68,7 +68,11 @@ export interface Pickup {
  *  honey rather than a flower. Honey is the rarer of the two because it is
  *  the one that undoes a mistake. */
 const PICKUP_CHANCE = 0.45;
-const HONEY_SHARE = 0.24;
+// Shares of that, in order: the rest are flowers. Honey undoes a mistake and
+// the powerups prevent one, so both are rarer than the thing you play for.
+const HONEY_SHARE = 0.2;
+const SHIELD_SHARE = 0.1;
+const SLOW_SHARE = 0.08;
 
 /**
  * What is sitting in a row of rain, if anything. Only ever in a lane the rain
@@ -80,7 +84,15 @@ export function generatePickup(random: () => number, row: Row): Pickup | null {
   const open = ([0, 1, 2] as Lane[]).filter((lane) => !row.blocked.includes(lane));
   if (open.length === 0) return null;
   if (random() > PICKUP_CHANCE) return null;
-  const kind: PickupKind = random() < HONEY_SHARE ? "honey" : "flower";
+  const roll = random();
+  const kind: PickupKind =
+    roll < HONEY_SHARE
+      ? "honey"
+      : roll < HONEY_SHARE + SHIELD_SHARE
+        ? "shield"
+        : roll < HONEY_SHARE + SHIELD_SHARE + SLOW_SHARE
+          ? "slow"
+          : "flower";
   const lane = open[Math.floor(random() * open.length)];
   return lane === undefined ? null : { lane, kind };
 }
@@ -106,12 +118,18 @@ export function isGrounded(honey: number): boolean {
 // obstacle can be beaten on the other one's axis, which is the whole reason
 // for having both.
 
-export const LEVEL_COUNT = 4;
-export type Level = 0 | 1 | 2 | 3;
+// Six of them, spanning the whole sky rather than a band near the floor: the
+// bee can climb right to the top. That is a real trade rather than free room,
+// because rain enters from the top edge and arrives with far less warning up
+// there.
+export const LEVEL_COUNT = 6;
+export type Level = number;
 
 /** At least this many levels stay clear of vines, so there is always
  *  somewhere to go and it is never more than one move away. */
-export const MIN_CLEAR_LEVELS = 2;
+export const MIN_CLEAR_LEVELS = 3;
+
+const LEVELS: Level[] = Array.from({ length: LEVEL_COUNT }, (_, i) => i);
 
 export interface Vine {
   readonly level: Level;
@@ -121,7 +139,7 @@ export interface Vine {
 }
 
 export function clampLevel(level: number): Level {
-  return Math.max(0, Math.min(LEVEL_COUNT - 1, level)) as Level;
+  return Math.max(0, Math.min(LEVEL_COUNT - 1, level));
 }
 
 /**
@@ -145,7 +163,7 @@ export function vineReach(age: number, grow: number, hold: number): number {
  */
 export function freeLevels(vines: readonly Vine[]): Level[] {
   const taken = new Set(vines.map((vine) => vine.level));
-  return ([0, 1, 2, 3] as Level[]).filter((level) => !taken.has(level));
+  return LEVELS.filter((level) => !taken.has(level));
 }
 
 export function canSpawnVine(vines: readonly Vine[]): boolean {
@@ -170,4 +188,44 @@ export function vineCatches(vine: Vine, level: Level, x: number, width: number):
   if (vine.level !== level) return false;
   const across = vine.reach * width;
   return vine.side === "left" ? x <= across : x >= width - across;
+}
+
+
+// --- wasps and powerups --------------------------------------------------
+
+/** How long each powerup lasts, in seconds. */
+export const SHIELD_S = 7;
+export const SLOW_S = 5;
+/** What the world's speed is multiplied by while syrup is in effect. */
+export const SLOW_FACTOR = 0.55;
+
+/**
+ * A wasp does not belong to a lane. It weaves across them as it falls, so it
+ * is the one threat you cannot answer by thinking in lanes at all --- and the
+ * one reason to look at where the bee actually is rather than which column it
+ * is in.
+ */
+export function waspDrift(t: number, phase: number, width: number, margin: number): number {
+  const span = Math.max(0, width / 2 - margin);
+  return width / 2 + Math.sin(t * 1.7 + phase) * span;
+}
+
+/** Two circles touching. The wasp's collision is positional, not lane-based,
+ *  which is the whole point of it. */
+export function overlaps(
+  ax: number,
+  ay: number,
+  ar: number,
+  bx: number,
+  by: number,
+  br: number,
+): boolean {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy <= (ar + br) * (ar + br);
+}
+
+/** A shield spends itself stopping one hit; everything else gets through. */
+export function absorbs(shieldUntil: number, now: number): boolean {
+  return shieldUntil > now;
 }

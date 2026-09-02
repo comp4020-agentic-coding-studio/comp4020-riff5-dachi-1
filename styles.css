@@ -9,10 +9,68 @@ body {
   flex-direction: column;
   font-family: system-ui, sans-serif;
   color: #12233a;
-  background: #dfe9f0;
+
+  /* The page is the same weather the canvas is: sky down to a meadow, so the
+     game sits in its world rather than on a slab of grey beside it. All
+     gradients --- no image, nothing to load, and it scales to any viewport. */
+  background:
+    radial-gradient(circle at 18% 8%, rgb(255 246 214 / 85%) 0 6%, rgb(255 246 214 / 0%) 34%),
+    linear-gradient(#7db2dd 0%, #a6cae4 38%, #cfe0e8 62%, #7fa25e 62%, #5c7f4f 100%)
+      fixed;
+}
+
+/* A band of flowers along the very bottom of the page, under everything. */
+body::after {
+  content: "";
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 26px;
+  background:
+    radial-gradient(circle at 12px 14px, #e79ac4 0 3px, transparent 4px),
+    radial-gradient(circle at 46px 18px, #f2d06b 0 3px, transparent 4px),
+    radial-gradient(circle at 82px 12px, #f0f3e6 0 3px, transparent 4px);
+  background-size: 104px 26px;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Drifting cloud, the same weather as the canvas, behind the whole page. */
+body::before {
+  content: "";
+  position: fixed;
+  top: 6%;
+  left: -30%;
+  width: 160%;
+  height: 34%;
+  background:
+    radial-gradient(ellipse 90px 34px at 20% 40%, rgb(255 255 255 / 34%) 0 60%, transparent 70%),
+    radial-gradient(ellipse 120px 40px at 58% 65%, rgb(255 255 255 / 26%) 0 60%, transparent 70%),
+    radial-gradient(ellipse 70px 28px at 85% 30%, rgb(255 255 255 / 30%) 0 60%, transparent 70%);
+  animation: drift 90s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(-6%);
+  }
+
+  to {
+    transform: translateX(6%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
 }
 
 header {
+  position: relative;
+  z-index: 1;
   padding: 0.75rem 1rem;
 }
 
@@ -28,6 +86,8 @@ nav a:focus-visible {
 }
 
 main {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -40,12 +100,14 @@ h1 {
   margin: 0;
   font-size: 1.1rem;
   letter-spacing: 0.08em;
-  color: #2f5d8a;
+  color: #16324e;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 45%);
 }
 
 canvas {
   touch-action: none;
   border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgb(12 34 56 / 28%);
   outline-offset: 4px;
   background: #9db8cc;
 }

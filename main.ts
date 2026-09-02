@@ -20,22 +20,30 @@ import {
   generateVine,
   vineReach,
   vineCatches,
+  waspDrift,
+  overlaps,
+  absorbs,
+  SHIELD_S,
+  SLOW_S,
+  SLOW_FACTOR,
 } from "./game-logic.ts";
 
 const WORLD_W = 300;
 const WORLD_H = 500;
 const LANE_W = WORLD_W / LANE_COUNT;
 const ROW_H = 56;
-// The bee flies in the lower band of the sky: high enough to have somewhere
-// to climb to, low enough that rain from the top is still readable on the way
-// down.
-const LEVEL_TOP = WORLD_H * 0.44;
+// The whole sky is flyable, top to bottom. Climbing is not free: rain enters
+// at the top edge, so the highest level sees it latest.
+const LEVEL_TOP = WORLD_H * 0.175;
 const LEVEL_BOTTOM = WORLD_H - 64;
 const VINE_GROW_S = 0.9;
 const VINE_HOLD_S = 1.4;
 const VINE_LIFE_S = VINE_GROW_S * 2 + VINE_HOLD_S;
 const VINE_INTERVAL_S = 2.6;
 const VINE_HALF_H = 26;
+const BEE_R = 15;
+const WASP_R = 13;
+const WASP_INTERVAL_S = 4.2;
 const ROW_SPACING_PX = 170;
 const SPEED_SCALE = 50;
 // Playtesting (not reading the code) turned this up: on a fresh load the
@@ -97,12 +105,16 @@ function laneCenter(lane: Lane): number {
   return lane * LANE_W + LANE_W / 2;
 }
 
+function waspX(w: { t: number; phase: number }): number {
+  return waspDrift(w.t, w.phase, WORLD_W, WASP_R + 6);
+}
+
 function levelY(level: Level): number {
   return LEVEL_TOP + ((LEVEL_BOTTOM - LEVEL_TOP) * level) / (LEVEL_COUNT - 1);
 }
 
 let playerLane: Lane = 1;
-let playerLevel: Level = 2;
+let playerLevel: Level = 3;
 let playerX = laneCenter(playerLane);
 let playerY = levelY(playerLevel);
 let score = 0;
@@ -115,17 +127,25 @@ type Drop = { row: Row; y: number; scored: boolean; pickup: Pickup | null; taken
 let rows: Drop[] = [];
 let vines: { vine: Vine; age: number }[] = [];
 let vineTimer = VINE_INTERVAL_S;
+let wasps: { y: number; phase: number; t: number }[] = [];
+let waspTimer = WASP_INTERVAL_S;
+let shieldUntil = 0;
+let slowUntil = 0;
 let spawnAccumulator = -START_GRACE_PX;
 let lastTime = 0;
 let gameOver = false;
 
 function resetGame(): void {
   playerLane = 1;
-  playerLevel = 2;
+  playerLevel = 3;
   playerX = laneCenter(playerLane);
   playerY = levelY(playerLevel);
   vines = [];
   vineTimer = VINE_INTERVAL_S;
+  wasps = [];
+  waspTimer = WASP_INTERVAL_S;
+  shieldUntil = 0;
+  slowUntil = 0;
   score = 0;
   honey = MAX_HONEY;
   flowers = 0;
@@ -161,6 +181,14 @@ function climb(delta: -1 | 1): void {
 /** One hit's worth of damage, wherever it came from. */
 function takeHit(): void {
   if (stunned > 0) return;
+  // Pollen spends itself stopping one hit, and the stun still runs so the
+  // same raindrop cannot immediately take a drop of honey as well.
+  if (absorbs(shieldUntil, clock)) {
+    shieldUntil = 0;
+    stunned = STUNNED_S;
+    live.textContent = "Pollen took it.";
+    return;
+  }
   honey = honeyAfterHit(honey);
   stunned = STUNNED_S;
   if (isGrounded(honey)) endGame();
@@ -171,8 +199,10 @@ function update(dt: number): void {
   clock += dt;
   if (stunned > 0) stunned = Math.max(0, stunned - dt);
 
-  const speed = speedForScore(score) * SPEED_SCALE;
-  setBuzzRate(speedForScore(score));
+  const syrup = slowUntil > clock;
+  const rawSpeed = speedForScore(score) * (syrup ? SLOW_FACTOR : 1);
+  const speed = rawSpeed * SPEED_SCALE;
+  setBuzzRate(rawSpeed);
   spawnAccumulator += dt * speed;
   if (spawnAccumulator >= ROW_SPACING_PX) {
     spawnAccumulator -= ROW_SPACING_PX;
@@ -209,6 +239,12 @@ function update(dt: number): void {
       r.taken = true;
       if (r.pickup.kind === "flower") {
         flowers += 1;
+      } else if (r.pickup.kind === "shield") {
+        shieldUntil = clock + SHIELD_S;
+        live.textContent = "Pollen shield.";
+      } else if (r.pickup.kind === "slow") {
+        slowUntil = clock + SLOW_S;
+        live.textContent = "Syrup. Everything slows.";
       } else {
         const refilled = honeyAfterRefill(honey);
         if (refilled !== honey) {
@@ -231,6 +267,20 @@ function update(dt: number): void {
   for (const v of vines) {
     if (vineCatches(v.vine, playerLevel, playerX, WORLD_W)) takeHit();
   }
+
+  // Wasps fall between the lanes rather than down one, so they are caught by
+  // where the bee is, not which column it is in.
+  waspTimer -= dt;
+  if (waspTimer <= 0) {
+    waspTimer = WASP_INTERVAL_S;
+    wasps.push({ y: -WASP_R * 2, phase: Math.random() * Math.PI * 2, t: 0 });
+  }
+  for (const w of wasps) {
+    w.t += dt;
+    w.y += speed * 0.62 * dt;
+    if (overlaps(waspX(w), w.y, WASP_R, playerX, playerY, BEE_R)) takeHit();
+  }
+  wasps = wasps.filter((w) => w.y < WORLD_H + WASP_R * 2);
 
   playerX += (laneCenter(playerLane) - playerX) * Math.min(1, dt * 14);
   playerY += (levelY(playerLevel) - playerY) * Math.min(1, dt * 11);
@@ -317,6 +367,79 @@ function drawHoneyPot(cx: number, cy: number, r: number): void {
   ctx.beginPath();
   ctx.ellipse(cx - r * 0.28, cy + r * 0.15, r * 0.16, r * 0.3, -0.3, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawWasp(cx: number, cy: number, t: number): void {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // Leaning the way it is drifting, so you can read where it is going next.
+  ctx.rotate(Math.cos(t * 1.7) * 0.5);
+
+  const flutter = 0.7 + 0.3 * Math.sin(t * 55);
+  ctx.fillStyle = "rgba(240,240,255,0.5)";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * 11, -4, 11 * flutter, 5, side * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Everything a bee is, sharpened: paler yellow, a waist, a pointed tail.
+  ctx.fillStyle = "#111014";
+  ctx.beginPath();
+  ctx.ellipse(0, -9, 6, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f2e14a";
+  ctx.beginPath();
+  ctx.moveTo(0, 15);
+  ctx.quadraticCurveTo(11, 2, 0, -4);
+  ctx.quadraticCurveTo(-11, 2, 0, 15);
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = "#111014";
+  for (const y of [-1, 5]) ctx.fillRect(-12, y, 24, 4);
+  ctx.restore();
+
+  ctx.strokeStyle = "#111014";
+  ctx.lineWidth = 1.3;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 2, -15);
+    ctx.quadraticCurveTo(side * 7, -21, side * 4, -24);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPollen(cx: number, cy: number, r: number): void {
+  ctx.fillStyle = "rgba(255,232,140,0.85)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,240,180,0.9)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 9; i += 1) {
+    const a = (i / 9) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.7, cy + Math.sin(a) * r * 0.7);
+    ctx.lineTo(cx + Math.cos(a) * r * 1.05, cy + Math.sin(a) * r * 1.05);
+    ctx.stroke();
+  }
+}
+
+function drawSyrup(cx: number, cy: number, r: number): void {
+  ctx.fillStyle = "#8c5a12";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r * 0.8, r, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e8961e";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.12, r * 0.58, r * 0.72, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f6c35a";
+  ctx.fillRect(cx - r * 0.8, cy - r * 0.72, r * 1.6, r * 0.3);
 }
 
 function drawVine(v: { vine: Vine; age: number }): void {
@@ -433,6 +556,8 @@ function render(): void {
       const px = laneCenter(r.pickup.lane);
       const py = r.y + ROW_H / 2;
       if (r.pickup.kind === "flower") drawFlower(px, py, 15);
+      else if (r.pickup.kind === "shield") drawPollen(px, py, 14);
+      else if (r.pickup.kind === "slow") drawSyrup(px, py, 13);
       else drawHoneyPot(px, py, 11);
     }
     for (const lane of r.row.blocked) {
@@ -450,13 +575,28 @@ function render(): void {
   }
 
   for (const v of vines) drawVine(v);
+  for (const w of wasps) drawWasp(waspX(w), w.y, w.t);
 
   // A stunned bee flickers, which is also the only thing telling you the next
   // raindrop cannot hurt you yet.
   const visible = gameOver || stunned === 0 || Math.floor(clock * 14) % 2 === 0;
   if (visible) {
     const tilt = (laneCenter(playerLane) - playerX) * -0.012;
+    if (shieldUntil > clock && !gameOver) {
+      // The shield is worn, not shown in a bar: you can see you have it
+      // without looking away from the bee.
+      const fade = Math.min(1, (shieldUntil - clock) / 1.5);
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(clock * 8) * fade;
+      drawPollen(playerX, playerY, 30);
+      ctx.globalAlpha = 1;
+    }
     drawBee(playerX, playerY, gameOver ? 1.4 : tilt);
+  }
+
+  if (slowUntil > clock && !gameOver) {
+    // Syrup: the whole sky thickens rather than a timer counting down.
+    ctx.fillStyle = "rgba(232,150,30,0.10)";
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
   }
 
   ctx.fillStyle = "#12233a";
@@ -576,3 +716,4 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 requestAnimationFrame(frame);
+

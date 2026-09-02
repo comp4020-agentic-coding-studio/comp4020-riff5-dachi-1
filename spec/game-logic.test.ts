@@ -16,6 +16,12 @@ import {
   LEVEL_COUNT,
   MIN_CLEAR_LEVELS,
   type Vine,
+  waspDrift,
+  overlaps,
+  absorbs,
+  SHIELD_S,
+  SLOW_S,
+  SLOW_FACTOR,
   honeyAfterHit,
   honeyAfterRefill,
   isGrounded,
@@ -91,13 +97,21 @@ describe("pickups sit where the rain isn't", () => {
     expect(generatePickup(() => 0, { blocked: [0, 1, 2] })).toBe(null);
   });
 
-  it("offers both flowers and honey over a run", () => {
-    const kinds = new Set<string>();
-    for (let i = 0; i < 400; i++) {
+  it("offers every kind over a run, with flowers the commonest", () => {
+    const counts: Record<string, number> = {};
+    for (let i = 0; i < 4000; i++) {
       const pickup = generatePickup(Math.random, { blocked: [0] });
-      if (pickup) kinds.add(pickup.kind);
+      if (pickup) counts[pickup.kind] = (counts[pickup.kind] ?? 0) + 1;
     }
-    expect(kinds).toEqual(new Set(["flower", "honey"]));
+    expect(new Set(Object.keys(counts))).toEqual(
+      new Set(["flower", "honey", "shield", "slow"]),
+    );
+    // Honey and the powerups undo or prevent a mistake, so the thing you
+    // actually play for has to stay the thing you mostly find.
+    const flower = counts["flower"] ?? 0;
+    for (const kind of ["honey", "shield", "slow"]) {
+      expect(flower).toBeGreaterThan(counts[kind] ?? 0);
+    }
   });
 });
 
@@ -157,6 +171,7 @@ describe("clampLevel", () => {
     expect(clampLevel(-1)).toBe(0);
     expect(clampLevel(LEVEL_COUNT)).toBe(LEVEL_COUNT - 1);
     expect(clampLevel(2)).toBe(2);
+    expect(clampLevel(LEVEL_COUNT - 1)).toBe(LEVEL_COUNT - 1);
   });
 });
 
@@ -174,5 +189,41 @@ describe("honey is the run's length, not the score", () => {
   it("grounds the bee only when the last drop goes", () => {
     expect(isGrounded(1)).toBe(false);
     expect(isGrounded(0)).toBe(true);
+  });
+});
+
+describe("wasps and powerups", () => {
+  it("keeps a wasp on screen while it weaves across the lanes", () => {
+    for (let i = 0; i < 300; i++) {
+      const x = waspDrift(i * 0.11, i * 0.7, 300, 19);
+      expect(x).toBeGreaterThanOrEqual(19);
+      expect(x).toBeLessThanOrEqual(300 - 19);
+    }
+  });
+
+  it("actually crosses lanes rather than hovering in one", () => {
+    // The whole point of a wasp is that it can't be answered lane-by-lane.
+    const xs = Array.from({ length: 200 }, (_, i) => waspDrift(i * 0.05, 0, 300, 19));
+    expect(Math.min(...xs)).toBeLessThan(100);
+    expect(Math.max(...xs)).toBeGreaterThan(200);
+  });
+
+  it("catches the bee by where it is, not which lane it is in", () => {
+    expect(overlaps(100, 100, 13, 108, 100, 15)).toBe(true);
+    expect(overlaps(100, 100, 13, 160, 100, 15)).toBe(false);
+    expect(overlaps(100, 100, 13, 100, 128, 15)).toBe(true);
+  });
+
+  it("absorbs a hit only while the pollen lasts", () => {
+    expect(absorbs(SHIELD_S, 0)).toBe(true);
+    expect(absorbs(SHIELD_S, SHIELD_S - 0.1)).toBe(true);
+    expect(absorbs(SHIELD_S, SHIELD_S)).toBe(false);
+    expect(absorbs(0, 0)).toBe(false);
+  });
+
+  it("slows the world without stopping it", () => {
+    expect(SLOW_FACTOR).toBeGreaterThan(0);
+    expect(SLOW_FACTOR).toBeLessThan(1);
+    expect(SLOW_S).toBeGreaterThan(0);
   });
 });
