@@ -20,6 +20,7 @@ import {
   generateVine,
   vineReach,
   vineCatches,
+  TELEGRAPH_S,
   waspDrift,
   overlaps,
   absorbs,
@@ -216,8 +217,11 @@ function update(dt: number): void {
   vineTimer -= dt;
   if (vineTimer <= 0) {
     vineTimer = VINE_INTERVAL_S;
+    // Born already claiming its level, but not growing for another second ---
+    // see drawVineWarning. Nothing else can take that level meanwhile, so the
+    // warning cannot be made a lie by a second vine.
     const born = generateVine(Math.random, vines.map((v) => v.vine));
-    if (born) vines.push({ vine: born, age: 0 });
+    if (born) vines.push({ vine: born, age: -TELEGRAPH_S });
   }
   for (const v of vines) {
     v.age += dt;
@@ -442,7 +446,50 @@ function drawSyrup(cx: number, cy: number, r: number): void {
   ctx.fillRect(cx - r * 0.8, cy - r * 0.72, r * 1.6, r * 0.3);
 }
 
+function drawVineWarning(v: { vine: Vine; age: number }): void {
+  const y = levelY(v.vine.level);
+  const fromLeft = v.vine.side === "left";
+  const x0 = fromLeft ? 0 : WORLD_W;
+  const dir = fromLeft ? 1 : -1;
+  // Ramps up as it gets close, so the warning reads as "about to", not "maybe".
+  const near = 1 - Math.max(0, -v.age) / TELEGRAPH_S;
+  const pulse = 0.45 + 0.55 * Math.abs(Math.sin(clock * 9));
+
+  ctx.save();
+  ctx.globalAlpha = (0.25 + 0.6 * near) * pulse;
+
+  // A stub of stem already showing at the edge: the thing itself, small.
+  ctx.fillStyle = "#7ec96f";
+  ctx.beginPath();
+  ctx.ellipse(x0 + dir * 5, y, 7, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // And a chevron saying which way it is about to come.
+  ctx.fillStyle = "#e8f5c8";
+  ctx.beginPath();
+  ctx.moveTo(x0 + dir * (12 + near * 8), y);
+  ctx.lineTo(x0 + dir * (4 + near * 8), y - 8);
+  ctx.lineTo(x0 + dir * (4 + near * 8), y + 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // A faint line across the level it is going to close, so the warning says
+  // where as well as when.
+  ctx.strokeStyle = "rgba(232,245,200,0.5)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 10]);
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x0 + dir * WORLD_W, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawVine(v: { vine: Vine; age: number }): void {
+  if (v.age < 0) {
+    drawVineWarning(v);
+    return;
+  }
   const y = levelY(v.vine.level);
   const across = v.vine.reach * WORLD_W;
   if (across <= 0) return;

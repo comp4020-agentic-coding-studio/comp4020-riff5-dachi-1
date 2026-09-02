@@ -131,6 +131,13 @@ export const MIN_CLEAR_LEVELS = 3;
 
 const LEVELS: Level[] = Array.from({ length: LEVEL_COUNT }, (_, i) => i);
 
+/**
+ * How long a vine shows at the edge before it starts growing. The level is
+ * reserved for the whole of it, so the warning is a promise: nothing else will
+ * take that level, and the bee has a full second to be somewhere else.
+ */
+export const TELEGRAPH_S = 1;
+
 export interface Vine {
   readonly level: Level;
   readonly side: "left" | "right";
@@ -186,6 +193,9 @@ export function generateVine(random: () => number, vines: readonly Vine[]): Vine
  */
 export function vineCatches(vine: Vine, level: Level, x: number, width: number): boolean {
   if (vine.level !== level) return false;
+  // A vine that has not grown yet catches nothing, including a bee sitting
+  // exactly on the edge it is about to come out of.
+  if (vine.reach <= 0) return false;
   const across = vine.reach * width;
   return vine.side === "left" ? x <= across : x >= width - across;
 }

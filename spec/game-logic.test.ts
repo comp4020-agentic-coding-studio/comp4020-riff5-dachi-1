@@ -15,6 +15,7 @@ import {
   clampLevel,
   LEVEL_COUNT,
   MIN_CLEAR_LEVELS,
+  TELEGRAPH_S,
   type Vine,
   waspDrift,
   overlaps,
@@ -159,9 +160,12 @@ describe("vines: the obstacle you dodge on the other axis", () => {
     expect(vineCatches(right, 1, 20, 300)).toBe(false);
   });
 
-  it("catches nothing before it has grown", () => {
+  it("catches nothing before it has grown, not even on its own edge", () => {
+    // It used to catch a bee sitting exactly on x = 0 at reach 0, which was
+    // harmless until vines started warning a second ahead --- at which point
+    // it would have been a hit during the warning.
     const seed: Vine = { level: 0, side: "left", reach: 0 };
-    expect(vineCatches(seed, 0, 0, 300)).toBe(true);
+    expect(vineCatches(seed, 0, 0, 300)).toBe(false);
     expect(vineCatches(seed, 0, 1, 300)).toBe(false);
   });
 });
@@ -225,5 +229,23 @@ describe("wasps and powerups", () => {
     expect(SLOW_FACTOR).toBeGreaterThan(0);
     expect(SLOW_FACTOR).toBeLessThan(1);
     expect(SLOW_S).toBeGreaterThan(0);
+  });
+});
+
+describe("a vine warns before it grows", () => {
+  it("catches nothing while it is still only a warning", () => {
+    // The telegraph is worth nothing if the thing can hit you during it.
+    const warning: Vine = { level: 2, side: "left", reach: vineReach(-0.5, 0.9, 1.4) };
+    expect(warning.reach).toBe(0);
+    expect(vineCatches(warning, 2, 0, 300)).toBe(false);
+    expect(vineCatches(warning, 2, 150, 300)).toBe(false);
+  });
+
+  it("gives a full second of it, and holds the level for the whole time", () => {
+    expect(TELEGRAPH_S).toBeGreaterThanOrEqual(1);
+    // Reserved from the moment it is created, so a second vine can never take
+    // the level the bee was just told to leave.
+    const claimed: Vine[] = [{ level: 1, side: "left", reach: 0 }];
+    expect(freeLevels(claimed)).not.toContain(1);
   });
 });
