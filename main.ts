@@ -13,7 +13,6 @@ import {
   isGrounded,
   MAX_HONEY,
   FLOWERS_PER_HONEY,
-  FLOWER_POINTS,
 } from "./game-logic.ts";
 
 const WORLD_W = 300;
@@ -143,7 +142,6 @@ function update(dt: number): void {
     if (!r.taken && r.flower !== null && r.flower === playerLane && r.y >= PLAYER_Y - ROW_H) {
       r.taken = true;
       flowers += 1;
-      score += FLOWER_POINTS;
       if (flowers % FLOWERS_PER_HONEY === 0) {
         const refilled = honeyAfterRefill(honey);
         if (refilled !== honey) {
@@ -202,38 +200,39 @@ function drawBee(cx: number, cy: number, tilt: number): void {
   ctx.translate(cx, cy);
   ctx.rotate(tilt);
 
-  // Wings first, so the body sits over them. They blur rather than flap:
-  // at a bee's wingbeat that is what you would actually see.
+  // Drawn nose-up, because that is the way it is flying. Wings first, so the
+  // body sits over them. They blur rather than flap: at a bee's wingbeat that
+  // is what you would actually see.
   const flutter = 0.75 + 0.25 * Math.sin(clock * 42);
   ctx.fillStyle = "rgba(232,244,255,0.55)";
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.ellipse(side * 9, -12, 7, 12 * flutter, side * 0.5, 0, Math.PI * 2);
+    ctx.ellipse(side * 12, -3, 12 * flutter, 7, side * 0.6, 0, Math.PI * 2);
     ctx.fill();
   }
 
   ctx.fillStyle = "#f7c948";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 17, 13, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 13, 17, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // Stripes, clipped to the body so they end where it does.
   ctx.save();
   ctx.clip();
   ctx.fillStyle = "#221a08";
-  for (const x of [-2, 7]) ctx.fillRect(x, -14, 5, 28);
+  for (const y of [-2, 7]) ctx.fillRect(-14, y, 28, 5);
   ctx.restore();
 
   ctx.fillStyle = "#221a08";
   ctx.beginPath();
-  ctx.arc(-13, 0, 7, 0, Math.PI * 2);
+  ctx.arc(0, -13, 7, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#221a08";
   ctx.lineWidth = 1.4;
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(-16, side * 3);
-    ctx.quadraticCurveTo(-23, side * 8, -25, side * 4);
+    ctx.moveTo(side * 3, -16);
+    ctx.quadraticCurveTo(side * 8, -23, side * 4, -25);
     ctx.stroke();
   }
   ctx.restore();
@@ -294,6 +293,13 @@ function render(): void {
   ctx.font = "600 20px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.fillText(`${score}`, 14, 32);
+
+  // Flowers are their own tally, not points folded into the score: they buy
+  // honey back, so what you want to know mid-run is how many more until one.
+  drawFlower(22, 56, 9);
+  ctx.fillStyle = "#12233a";
+  ctx.font = "600 15px system-ui, sans-serif";
+  ctx.fillText(`${flowers}`, 36, 61);
 
   for (let i = 0; i < MAX_HONEY; i += 1) {
     drawHoney(WORLD_W - 22 - i * 22, 24, i < honey);
